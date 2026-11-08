@@ -565,6 +565,11 @@ async function viewDetail(id) {
       <section class="panel"><h2>${LEAFMARK}Steckbrief</h2>
         ${facts.length ? `<div class="facts">${facts.join("")}</div>` : `<p class="sources">Noch keine Daten. Über „Daten neu abrufen“ oder „Bearbeiten“ ergänzen.</p>`}
         ${info.sources && info.sources.length ? `<p class="sources">Quellen: ${esc(info.sources.join(", "))}</p>` : ""}
+        ${!(info.sources || []).some((x) => x === "Perenual" || x === "Open Plantbook")
+          ? `<div class="notice warn"><span class="ni">🔑</span><div><b>Keine Pflegedaten abgerufen</b>${state.config.perenual || state.config.openplantbook
+              ? "Für diese Art hatte die Pflege-Datenbank nichts. Du kannst die Werte über ✏️ selbst eintragen."
+              : `Winterhärte, Wasser, Licht und Giftigkeit kommen von Perenual. Dafür fehlt noch der kostenlose API-Key – siehe <a href="#/einstellungen">Einstellungen</a>. Danach unten auf „Daten neu abrufen“.`}</div></div>`
+          : ""}
       </section>
 
       ${desc || p.ref_image ? `<section class="panel"><h2>${LEAFMARK}Beschreibung</h2>

@@ -658,7 +658,13 @@ def lookup(title=None, sci=None):
 
     if sci_name:
         try:
-            p = map_perenual(perenual_find(sci_name))
+            raw = perenual_find(sci_name)
+            p = map_perenual(raw)
+            care_keys = {"light", "water", "water_interval", "min_temp", "toxic_humans", "toxic_pets"}
+            if raw and not (care_keys & set(p)):
+                warnings.append("Perenual: Art gefunden, aber im Gratis-Tarif keine Pflegedaten dafür")
+            elif not raw:
+                warnings.append(f"Perenual: keine Daten zu {sci_name} gefunden")
             if p:
                 info.update({k: v for k, v in p.items() if k not in ("min_temp", "water_interval")})
                 if "min_temp" in p:
