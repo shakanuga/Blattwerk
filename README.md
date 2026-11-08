@@ -16,7 +16,7 @@ Selbst gehosteter Pflanzen-Tracker. Du fotografierst eine Pflanze, lässt die Ar
 
 ## Datenquellen
 
-Alle API-Keys sind optional und kostenlos. Ohne Keys funktionieren Wikipedia-Suche, Beschreibung und Musterbild, und die übrigen Felder trägst du selbst ein.
+Alle API-Keys sind optional und kostenlos. Du kannst sie entweder als Container-Variable setzen oder direkt in Blattwerk unter **Einstellungen → Datenquellen** eintragen (gespeichert in `/data`, die Container-Variable hat Vorrang). Ohne Keys funktionieren Wikipedia-Suche, Beschreibung und Musterbild, und die übrigen Felder trägst du selbst ein.
 
 | Quelle | Liefert | Key |
 |---|---|---|

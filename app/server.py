@@ -32,10 +32,26 @@ VERSION = "1.0.0"
 PORT = int(os.environ.get("PORT", "8080"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 STATIC_DIR = Path(__file__).parent / "static"
-PERENUAL_KEY = os.environ.get("PERENUAL_API_KEY", "").strip()
-PLANTNET_KEY = os.environ.get("PLANTNET_API_KEY", "").strip()
-OPB_ID = os.environ.get("OPENPLANTBOOK_CLIENT_ID", "").strip()
-OPB_SECRET = os.environ.get("OPENPLANTBOOK_CLIENT_SECRET", "").strip()
+KEY_NAMES = ("PLANTNET_API_KEY", "PERENUAL_API_KEY", "OPENPLANTBOOK_CLIENT_ID", "OPENPLANTBOOK_CLIENT_SECRET")
+
+
+def key(name):
+    """API-Key: Umgebungsvariable hat Vorrang, sonst der in der App gespeicherte Wert."""
+    v = os.environ.get(name, "").strip()
+    if v:
+        return v
+    try:
+        with db() as c:
+            row = c.execute("SELECT value FROM settings WHERE key=?", ("key_" + name,)).fetchone()
+        return (json.loads(row["value"]) or "").strip() if row else ""
+    except Exception:
+        return ""
+
+
+def key_source(name):
+    if os.environ.get(name, "").strip():
+        return "env"
+    return "app" if key(name) else None
 WIKI_LANG = os.environ.get("WIKI_LANG", "de").strip() or "de"
 USER_AGENT = f"Blattwerk/{VERSION} (self-hosted plant tracker; github.com/shakanuga/Blattwerk)"
 MAX_BODY = 25 * 1024 * 1024
@@ -135,7 +151,7 @@ def init_db():
 def get_settings():
     s = dict(DEFAULT_SETTINGS)
     with db() as c:
-        for row in c.execute("SELECT key, value FROM settings"):
+        for row in c.execute("SELECT key, value FROM settings WHERE key NOT LIKE 'key\\_%' ESCAPE '\\'"):
             try:
                 s[row["key"]] = json.loads(row["value"])
             except Exception:
@@ -322,11 +338,11 @@ def _clean(v):
 
 
 def perenual_find(sci_name):
-    if not PERENUAL_KEY or not sci_name:
+    if not key("PERENUAL_API_KEY") or not sci_name:
         return None
 
     def go():
-        url = f"{PERENUAL_BASE}/species-list?" + urllib.parse.urlencode({"key": PERENUAL_KEY, "q": sci_name})
+        url = f"{PERENUAL_BASE}/species-list?" + urllib.parse.urlencode({"key": key("PERENUAL_API_KEY"), "q": sci_name})
         data = http_json(url).get("data") or []
         target = sci_name.lower().strip()
         target2 = " ".join(target.split()[:2])
@@ -342,7 +358,7 @@ def perenual_find(sci_name):
             best = data[0]
         if not best:
             return None
-        det = http_json(f"{PERENUAL_BASE}/species/details/{best['id']}?key={PERENUAL_KEY}")
+        det = http_json(f"{PERENUAL_BASE}/species/details/{best['id']}?key={key('PERENUAL_API_KEY')}")
         return det
 
     return cached(f"perenual:{sci_name.lower()}", 30 * DAY, go)
@@ -480,12 +496,12 @@ _opb_token = {"value": None, "exp": 0}
 
 
 def opb_token():
-    if not (OPB_ID and OPB_SECRET):
+    if not (key("OPENPLANTBOOK_CLIENT_ID") and key("OPENPLANTBOOK_CLIENT_SECRET")):
         return None
     if _opb_token["value"] and time.time() < _opb_token["exp"] - 60:
         return _opb_token["value"]
     body = urllib.parse.urlencode(
-        {"grant_type": "client_credentials", "client_id": OPB_ID, "client_secret": OPB_SECRET}
+        {"grant_type": "client_credentials", "client_id": key("OPENPLANTBOOK_CLIENT_ID"), "client_secret": key("OPENPLANTBOOK_CLIENT_SECRET")}
     ).encode()
     data = http_json(
         f"{OPB_BASE}/token/", data=body, headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST"
@@ -496,7 +512,7 @@ def opb_token():
 
 
 def opb_find(sci_name):
-    if not (OPB_ID and OPB_SECRET) or not sci_name:
+    if not (key("OPENPLANTBOOK_CLIENT_ID") and key("OPENPLANTBOOK_CLIENT_SECRET")) or not sci_name:
         return None
 
     def go():
@@ -553,7 +569,7 @@ def map_opb(d):
 
 
 def plantnet_identify(jpeg_bytes, organ="auto"):
-    if not PLANTNET_KEY:
+    if not key("PLANTNET_API_KEY"):
         raise UpstreamError("Kein Pl@ntNet-Key hinterlegt (PLANTNET_API_KEY).")
     boundary = "----blattwerk" + uuid.uuid4().hex
     parts = []
@@ -569,7 +585,7 @@ def plantnet_identify(jpeg_bytes, organ="auto"):
     parts.append(f"--{boundary}--\r\n".encode())
     body = b"".join(parts)
     url = "https://my-api.plantnet.org/v2/identify/all?" + urllib.parse.urlencode(
-        {"api-key": PLANTNET_KEY, "lang": WIKI_LANG, "nb-results": 6, "include-related-images": "true"}
+        {"api-key": key("PLANTNET_API_KEY"), "lang": WIKI_LANG, "nb-results": 6, "include-related-images": "true"}
     )
     try:
         data = http_json(
@@ -1050,9 +1066,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(
                 {
                     "version": VERSION,
-                    "plantnet": bool(PLANTNET_KEY),
-                    "perenual": bool(PERENUAL_KEY),
-                    "openplantbook": bool(OPB_ID and OPB_SECRET),
+                    "keys": {n: key_source(n) for n in KEY_NAMES},
+                    "plantnet": bool(key("PLANTNET_API_KEY")),
+                    "perenual": bool(key("PERENUAL_API_KEY")),
+                    "openplantbook": bool(key("OPENPLANTBOOK_CLIENT_ID") and key("OPENPLANTBOOK_CLIENT_SECRET")),
                     "wiki_lang": WIKI_LANG,
                     "settings": get_settings(),
                 }
@@ -1064,7 +1081,16 @@ class Handler(BaseHTTPRequestHandler):
                 for k, v in body.items():
                     if k in DEFAULT_SETTINGS:
                         c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?,?)", (k, json.dumps(v)))
-            return self.send_json(get_settings())
+                for name, val in (body.get("keys") or {}).items():
+                    if name not in KEY_NAMES or val is None:
+                        continue
+                    val = str(val).strip()
+                    if val:
+                        c.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?,?)", ("key_" + name, json.dumps(val)))
+                    else:
+                        c.execute("DELETE FROM settings WHERE key=?", ("key_" + name,))
+            _opb_token["value"] = None
+            return self.send_json({**get_settings(), "keys": {n: key_source(n) for n in KEY_NAMES}})
 
         if head == "search" and method == "GET":
             q = (qs.get("q") or "").strip()
@@ -1195,9 +1221,9 @@ def main():
     print(f"🌿 Blattwerk {VERSION} läuft auf Port {PORT} – Daten in {DATA_DIR}")
     print(
         "   Quellen: Wikipedia ✓  "
-        f"Perenual {'✓' if PERENUAL_KEY else '–'}  "
-        f"Open Plantbook {'✓' if OPB_ID and OPB_SECRET else '–'}  "
-        f"Pl@ntNet {'✓' if PLANTNET_KEY else '–'}",
+        f"Perenual {'✓' if key('PERENUAL_API_KEY') else '–'}  "
+        f"Open Plantbook {'✓' if key('OPENPLANTBOOK_CLIENT_ID') and key('OPENPLANTBOOK_CLIENT_SECRET') else '–'}  "
+        f"Pl@ntNet {'✓' if key('PLANTNET_API_KEY') else '–'}",
         flush=True,
     )
     try:

@@ -676,10 +676,10 @@ function viewSettings() {
   const c = state.config;
   const s = c.settings;
   const apis = [
-    ["Wikipedia & Wikidata", true, "Beschreibung, Musterbild, botanischer Name. Kein Key nötig.", null],
-    ["Pl@ntNet", c.plantnet, "Erkennt die Art direkt am Foto (500 Erkennungen/Tag gratis).", ["PLANTNET_API_KEY", "https://my.plantnet.org/"]],
-    ["Perenual", c.perenual, "Licht, Wasser, Gießintervall, Winterhärtezone, Giftigkeit (100 Abfragen/Tag gratis, Ergebnisse werden 30 Tage gecacht).", ["PERENUAL_API_KEY", "https://perenual.com/docs/api"]],
-    ["Open Plantbook", c.openplantbook, "Temperatur-, Licht-, Luft- und Bodenfeuchte-Bereiche.", ["OPENPLANTBOOK_CLIENT_ID + _SECRET", "https://open.plantbook.io/"]],
+    ["Wikipedia & Wikidata", true, "Beschreibung, Musterbild, botanischer Name. Kein Key nötig.", null, []],
+    ["Pl@ntNet", c.plantnet, "Erkennt die Art direkt am Foto (500 Erkennungen/Tag gratis).", "https://my.plantnet.org/", [["PLANTNET_API_KEY", "API-Key"]]],
+    ["Perenual", c.perenual, "Licht, Wasser, Gießintervall, Winterhärtezone, Giftigkeit (100 Abfragen/Tag gratis, Ergebnisse werden 30 Tage gecacht).", "https://perenual.com/docs/api", [["PERENUAL_API_KEY", "API-Key"]]],
+    ["Open Plantbook", c.openplantbook, "Temperatur-, Licht-, Luft- und Bodenfeuchte-Bereiche.", "https://open.plantbook.io/", [["OPENPLANTBOOK_CLIENT_ID", "Client-ID"], ["OPENPLANTBOOK_CLIENT_SECRET", "Client-Secret"]]],
   ];
   $app.innerHTML = `
     <header class="hero slim">${vine("tl")}${vine("tr")}
@@ -694,13 +694,33 @@ function viewSettings() {
         <button class="btn" id="saveS">Speichern & alle Pflanzen neu bewerten</button>
       </section>
       <section class="panel"><h2>${LEAFMARK}Datenquellen</h2>
-        ${apis.map(([n, on, d, env]) => `<div class="api"><span class="dot ${on ? "on" : ""}"></span><div><b>${n}</b> ${on ? "– aktiv" : "– nicht eingerichtet"}<p>${d}</p>${env && !on ? `<p>Kostenlosen Key holen bei <a href="${env[1]}" target="_blank" rel="noopener">${env[1].replace(/^https:\/\//, "").replace(/\/$/, "")}</a> und im Container als <code>${env[0]}</code> eintragen.</p>` : ""}</div></div>`).join("")}
+        ${apis.map(([n, on, d, url, fields]) => `<div class="api"><span class="dot ${on ? "on" : ""}"></span><div style="flex:1;min-width:0"><b>${n}</b> ${on ? "– aktiv" : "– nicht eingerichtet"}<p>${d}</p>
+          ${url && !on ? `<p>Kostenlosen Key holen bei <a href="${url}" target="_blank" rel="noopener">${url.replace(/^https:\/\//, "").replace(/\/$/, "")}</a></p>` : ""}
+          ${fields.map(([envName, label]) => {
+            const src = (c.keys || {})[envName];
+            return src === "env"
+              ? `<p>✓ ${label} kommt aus dem Container (<code>${envName}</code>)</p>`
+              : `<label class="f" style="margin:8px 0 0"><span>${label}</span><input class="inp keyin" type="password" autocomplete="off" data-k="${envName}" placeholder="${src ? "•••••• gespeichert – zum Ändern neu eingeben" : "einfügen…"}"></label>`;
+          }).join("")}</div></div>`).join("")}
+        <button class="btn" id="saveK" style="margin-top:14px">🔑 Keys speichern</button>
+        <p class="sources">Die Keys werden nur auf deinem Server gespeichert (in <code>/data</code>) und nie an den Browser zurückgeschickt. Ein Key im Container hat Vorrang.</p>
       </section>
       <section class="panel"><h2>${LEAFMARK}Aufs Handy</h2>
         <p class="desc" style="margin:0">Öffne Blattwerk im Handy-Browser und wähle „Zum Home-Bildschirm“. Dann startet es wie eine App, und „Foto“ öffnet direkt die Kamera.</p>
       </section>
       ${DIVIDER}<div class="footer">Blattwerk ${esc(c.version)}</div>
     </main>`;
+  document.getElementById("saveK").addEventListener("click", async () => {
+    const keys = {};
+    document.querySelectorAll(".keyin").forEach((i) => { if (i.value.trim()) keys[i.dataset.k] = i.value.trim(); });
+    if (!Object.keys(keys).length) { toast("Kein neuer Key eingetragen", true); return; }
+    try {
+      await api("settings", { method: "PUT", body: { keys } });
+      state.config = await api("config");
+      toast("🔑 Keys gespeichert");
+      viewSettings();
+    } catch (err) { toast(err.message, true); }
+  });
   document.getElementById("saveS").addEventListener("click", async () => {
     const v = parseFloat(document.getElementById("lmt").value);
     if (isNaN(v)) { toast("Bitte eine Zahl eingeben", true); return; }
