@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>Blattwerk</Name>
+  <Repository>ghcr.io/shakanuga/blattwerk:latest</Repository>
+  <Registry>https://github.com/shakanuga/Blattwerk/pkgs/container/blattwerk</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Project>https://github.com/shakanuga/Blattwerk</Project>
+  <Overview>Blattwerk – selbst gehosteter Pflanzen-Tracker. Foto machen, Art erkennen oder suchen, Pflege- und Winterhärte-Daten automatisch abrufen, Gieß-Erinnerungen.</Overview>
+  <Category>HomeAutomation: Tools:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/shakanuga/Blattwerk/main/app/static/icon-512.png</Icon>
+  <Config Name="WebUI-Port" Target="8080" Default="8766" Mode="tcp" Description="Port der Weboberfläche" Type="Port" Display="always" Required="true" Mask="false">8766</Config>
+  <Config Name="Daten" Target="/data" Default="/mnt/user/appdata/blattwerk" Mode="rw" Description="Datenbank, Fotos und Musterbilder" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/blattwerk</Config>
+  <Config Name="Pl@ntNet API-Key" Target="PLANTNET_API_KEY" Default="" Mode="" Description="Optional: Erkennung per Foto – kostenlos auf my.plantnet.org" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Perenual API-Key" Target="PERENUAL_API_KEY" Default="" Mode="" Description="Optional: Pflege- und Winterhärtedaten – kostenlos auf perenual.com" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Open Plantbook Client-ID" Target="OPENPLANTBOOK_CLIENT_ID" Default="" Mode="" Description="Optional: Temperatur-/Feuchtebereiche – open.plantbook.io" Type="Variable" Display="always" Required="false" Mask="false"></Config>
+  <Config Name="Open Plantbook Client-Secret" Target="OPENPLANTBOOK_CLIENT_SECRET" Default="" Mode="" Description="Optional: zu Open Plantbook" Type="Variable" Display="always" Required="false" Mask="true"></Config>
+  <Config Name="Zeitzone" Target="TZ" Default="Europe/Berlin" Mode="" Description="" Type="Variable" Display="advanced" Required="false" Mask="false">Europe/Berlin</Config>
+</Container>

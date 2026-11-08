@@ -1,0 +1,16 @@
+services:
+  blattwerk:
+    build: .
+    container_name: blattwerk
+    restart: unless-stopped
+    ports:
+      - "8766:8080"
+    volumes:
+      - /mnt/user/appdata/blattwerk:/data
+    environment:
+      TZ: Europe/Berlin
+      # Alle Keys sind optional und kostenlos – siehe README
+      PLANTNET_API_KEY: ""
+      PERENUAL_API_KEY: ""
+      OPENPLANTBOOK_CLIENT_ID: ""
+      OPENPLANTBOOK_CLIENT_SECRET: ""
