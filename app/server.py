@@ -350,6 +350,31 @@ def _clean(v):
     return v
 
 
+def perenual_care_guide(det):
+    """Kurze Pflegeanleitung (Gießen, Licht, Rückschnitt) – englisch, optional."""
+    k = key("PERENUAL_API_KEY")
+    urls = []
+    link = det.get("care_guides") or det.get("care-guides")
+    if isinstance(link, str) and link.startswith("http"):
+        urls.append(link if "key=" in link else link + ("&" if "?" in link else "?") + "key=" + k)
+    q = urllib.parse.urlencode({"key": k, "species_id": det.get("id")})
+    urls += [f"{PERENUAL_BASE}/species-care-guide-list?{q}", f"https://perenual.com/api/species-care-guide-list?{q}"]
+    for u in urls:
+        try:
+            data = http_json(u)
+        except UpstreamError:
+            continue
+        out = {}
+        for item in data.get("data") or []:
+            for sec in item.get("section") or []:
+                t, txt = (sec.get("type") or "").lower(), _clean(sec.get("description"))
+                if t and isinstance(txt, str) and txt.strip():
+                    out[t] = txt.strip()
+        if out:
+            return out
+    return {}
+
+
 def perenual_find(sci_name):
     if not key("PERENUAL_API_KEY") or not sci_name:
         return None
@@ -372,6 +397,7 @@ def perenual_find(sci_name):
         if not best:
             return None
         det = http_json(f"{PERENUAL_BASE}/species/details/{best['id']}?key={key('PERENUAL_API_KEY')}")
+        det["_care_guide"] = perenual_care_guide(det)
         return det
 
     return cached(f"perenual:{sci_name.lower()}", None, go)
@@ -419,6 +445,40 @@ TYPE_MAP = {
     "fruit": "Obst",
     "bulb": "Zwiebelpflanze",
     "groundcover": "Bodendecker",
+}
+
+
+ORIGIN_MAP = {
+    "south america": "Südamerika", "central america": "Mittelamerika", "north america": "Nordamerika",
+    "mexico": "Mexiko", "caribbean": "Karibik", "west indies": "Karibik", "brazil": "Brasilien",
+    "africa": "Afrika", "south africa": "Südafrika", "tropical africa": "Tropisches Afrika", "madagascar": "Madagaskar",
+    "asia": "Asien", "east asia": "Ostasien", "southeast asia": "Südostasien", "china": "China", "japan": "Japan",
+    "india": "Indien", "himalaya": "Himalaya", "europe": "Europa", "mediterranean": "Mittelmeerraum",
+    "southern europe": "Südeuropa", "australia": "Australien", "new zealand": "Neuseeland", "pacific islands": "Pazifikinseln",
+    "middle east": "Naher Osten", "turkey": "Türkei", "caucasus": "Kaukasus", "korea": "Korea", "taiwan": "Taiwan",
+    "united states": "USA", "canada": "Kanada", "peru": "Peru", "colombia": "Kolumbien", "argentina": "Argentinien",
+    "chile": "Chile", "ecuador": "Ecuador", "venezuela": "Venezuela", "bolivia": "Bolivien", "guatemala": "Guatemala",
+    "costa rica": "Costa Rica", "panama": "Panama", "philippines": "Philippinen", "indonesia": "Indonesien",
+    "malaysia": "Malaysia", "thailand": "Thailand", "vietnam": "Vietnam", "sri lanka": "Sri Lanka",
+    "canary islands": "Kanaren", "north africa": "Nordafrika", "western asia": "Westasien", "central asia": "Zentralasien",
+}
+SOIL_MAP = {
+    "well-drained": "durchlässig", "well drained": "durchlässig", "loam": "lehmig", "loamy": "lehmig", "sandy": "sandig",
+    "sand": "sandig", "clay": "tonig", "chalky": "kalkhaltig", "acidic": "sauer", "alkaline": "alkalisch",
+    "neutral": "neutral", "moist": "feucht", "rich": "nährstoffreich", "humus rich": "humusreich", "peat": "torfig",
+}
+MONTH_MAP = {m.lower(): d for m, d in zip(
+    ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"],
+    ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"])}
+PROP_MAP = {
+    "seed propagation": "Samen", "seed": "Samen", "cutting": "Stecklinge", "cuttings": "Stecklinge",
+    "stem cutting": "Stecklinge", "leaf cutting": "Blattstecklinge", "division": "Teilung", "layering": "Absenker",
+    "air layering propagation": "Abmoosen", "air layering": "Abmoosen", "grafting propagation": "Veredelung",
+    "grafting": "Veredelung", "offsets": "Kindel", "bulb": "Zwiebeln", "tuber": "Knollen", "spores": "Sporen",
+}
+ATTRACT_MAP = {
+    "butterflies": "Schmetterlinge", "bees": "Bienen", "hummingbirds": "Kolibris", "birds": "Vögel",
+    "pollinators": "Bestäuber", "insects": "Insekten", "moths": "Nachtfalter",
 }
 
 
@@ -499,7 +559,91 @@ def map_perenual(d):
         u = _clean(img.get("regular_url") or img.get("original_url") or img.get("medium_url"))
         if u and u.startswith("http"):
             out["perenual_image"] = u
+    if isinstance(bench, dict) and _clean(bench.get("value")):
+        rng = re.findall(r"\d+", str(bench.get("value")))
+        if rng:
+            out["water_range"] = "–".join(rng[:2])
+            if "week" in str(bench.get("unit", "")).lower():
+                out["water_range"] += " Wochen"
+    origin = _list(d.get("origin"))
+    if origin:
+        out["origin"] = ", ".join(dict.fromkeys(_tr(o, ORIGIN_MAP) for o in origin))
+    soil = _list(d.get("soil"))
+    if soil:
+        out["soil"] = ", ".join(dict.fromkeys(_tr(x, SOIL_MAP) for x in soil))
+    pm = _list(d.get("pruning_month"))
+    if pm:
+        out["pruning"] = ", ".join(dict.fromkeys(_tr(x, MONTH_MAP) for x in pm))
+    prop = _list(d.get("propagation"))
+    if prop:
+        out["propagation"] = ", ".join(dict.fromkeys(_tr(x, PROP_MAP) for x in prop))
+    att = _list(d.get("attracts"))
+    if att:
+        out["attracts"] = ", ".join(dict.fromkeys(_tr(x, ATTRACT_MAP) for x in att))
+    ed = [n for k2, n in (("edible_fruit", "Früchte"), ("edible_leaf", "Blätter")) if _clean(d.get(k2)) is True]
+    if ed:
+        out["edible"] = "ja – " + " und ".join(ed)
+    elif d.get("edible_fruit") is False and d.get("edible_leaf") in (False, None):
+        out["edible"] = "nein"
+    h = _height(d.get("dimensions") or d.get("dimension"))
+    if h:
+        out["height"] = h
+    if d.get("tropical"):
+        out["tropical"] = True
+    cg = d.get("_care_guide") or {}
+    if cg:
+        out["care_guide"] = cg
     return out
+
+
+def _list(v):
+    if isinstance(v, str):
+        v = [v]
+    if not isinstance(v, list):
+        return []
+    return [x.strip() for x in v if isinstance(x, str) and x.strip() and _clean(x)]
+
+
+def _height(dims):
+    if isinstance(dims, dict):
+        dims = [dims]
+    for dm in dims or []:
+        if not isinstance(dm, dict) or "height" not in str(dm.get("type", "")).lower():
+            continue
+        lo, hi, unit = dm.get("min_value"), dm.get("max_value"), str(dm.get("unit") or "").lower()
+        f = 30.48 if "feet" in unit or unit == "ft" else 2.54 if "inch" in unit else 100 if unit in ("m", "meter", "meters") else 1
+        try:
+            vals = [int(round(float(x) * f / 10) * 10) or round(float(x) * f) for x in (lo, hi) if x not in (None, "", 0, "0")]
+        except Exception:
+            continue
+        if not vals:
+            continue
+        fmt = lambda cm: f"{cm / 100:.1f} m".replace(".", ",") if cm >= 100 else f"{cm} cm"
+        return " – ".join(dict.fromkeys(fmt(v) for v in vals))
+    return None
+
+
+def water_sentence(info, interval=None):
+    """Gießhinweis als Satz, wie auf einem Pflanzenetikett."""
+    w = (info.get("water") or "").lower()
+    soil_min = info.get("opb_soil_min")
+    rng = info.get("water_range") or (str(interval) if interval else None)
+    if w == "viel" or (isinstance(soil_min, (int, float)) and soil_min >= 30):
+        txt = "Gut feucht halten, Erde nicht austrocknen lassen."
+    elif w == "mittel":
+        txt = (f"Etwa alle {rng} Tage gießen, " if rng and "Wochen" not in rng else f"Etwa alle {rng} gießen, " if rng else "Regelmäßig gießen, ")
+        txt += "sobald die oberste Erdschicht angetrocknet ist."
+    elif w == "wenig":
+        txt = "Sparsam gießen, Erde zwischendurch gut abtrocknen lassen."
+    elif w == "sehr wenig":
+        txt = "Nur selten gießen – verträgt längere Trockenheit."
+    elif rng:
+        txt = f"Etwa alle {rng} Tage gießen."
+    else:
+        return None
+    if info.get("drought_tolerant") and w not in ("wenig", "sehr wenig"):
+        txt += " Verträgt kurze Trockenphasen."
+    return txt
 
 
 # --------------------------------------------------------------- Open Plantbook
@@ -569,6 +713,11 @@ def map_opb(d):
     if d.get("min_temp") is not None:
         try:
             out["opb_min_temp"] = float(d["min_temp"])
+        except Exception:
+            pass
+    if d.get("min_soil_moist") is not None:
+        try:
+            out["opb_soil_min"] = float(d["min_soil_moist"])
         except Exception:
             pass
     if d.get("category"):
@@ -712,6 +861,10 @@ def lookup(title=None, sci=None):
                 info["sources"].append("Open Plantbook")
         except UpstreamError as e:
             warnings.append(f"Open Plantbook: {e}")
+
+    ws = water_sentence(info, profile.get("water_interval"))
+    if ws:
+        info["water_text"] = ws
 
     if not profile.get("ref_image_url"):
         alt = info.get("perenual_image") or info.get("opb_image")

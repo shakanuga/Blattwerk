@@ -390,3 +390,15 @@ figure.ref .tag {
 .divider { display: flex; justify-content: center; margin: 26px 0 6px; opacity: .6; }
 .divider svg { width: 180px; }
 .footer { text-align: center; color: var(--muted); font-size: .78rem; margin: 10px 0 20px; }
+
+/* ------------------------------------------------------------ Pflege im Etikett-Stil */
+.tagcard {
+  position: relative; background: #fbfaf3; border: 1.5px solid var(--paper-2); border-radius: 16px 16px 16px 16px;
+  padding: 16px 18px 14px; text-align: center; line-height: 1.5; font-size: .95rem;
+  background-image: radial-gradient(circle at 50% 14px, var(--paper-2) 5px, transparent 6px);
+  padding-top: 30px;
+}
+.tagname { font-family: var(--serif); font-weight: 700; font-size: 1.45rem; color: var(--forest); margin-bottom: 8px; }
+.tagrow { margin: 3px 0; }
+.tagrow b { color: var(--forest-2); }
+.tagsci { margin-top: 10px; font-style: italic; color: var(--muted); font-size: .85rem; border-top: 1px dashed var(--paper-2); padding-top: 8px; }

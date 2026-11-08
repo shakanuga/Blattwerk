@@ -115,6 +115,45 @@ async function processPhoto(file) {
   return { full: scaleTo(img, 1800, 0.86), thumb: scaleTo(img, 520, 0.8), taken_at: new Date(file.lastModified || Date.now()).toISOString().slice(0, 19) };
 }
 
+function winterText(p) {
+  const info = p.info || {};
+  if (info.winter) return info.winter;
+  const t = p.min_temp !== null && p.min_temp !== undefined ? String(p.min_temp).replace(".", ",") : null;
+  switch (p.hardy) {
+    case "ja":
+      return p.location === "drinnen" ? "Winterhart – könnte auch draußen stehen." : "Winterhart, kann draußen bleiben." + (p.location === "balkon" ? " Kübel vor Durchfrieren schützen (Jute, Styroporplatte)." : "");
+    case "bedingt":
+      return `Verträgt leichten Frost${t ? " bis etwa " + t + " °C" : ""}. Bei strengem Frost mit Vlies schützen oder geschützt an die Hauswand stellen.`;
+    case "nein":
+      if (p.location === "drinnen") return `Nicht frosthart – ganzjährig drinnen halten${info.tropical ? ", nicht unter 15 °C" : ""}.`;
+      return info.tropical
+        ? "Nicht frosthart. Ab etwa 10 °C nachts reinholen und warm (über 15 °C) und hell überwintern."
+        : "Nicht frosthart. Vor dem ersten Frost reinholen, hell und kühl (ca. 5–12 °C) überwintern, wenig gießen, nicht düngen.";
+    default:
+      return null;
+  }
+}
+
+function careRows(p) {
+  const info = p.info || {};
+  const rows = [];
+  const add = (label, val) => { if (val) rows.push(`<div class="tagrow"><b>${label}:</b> ${esc(val)}</div>`); };
+  add("Herkunft", info.origin);
+  add("Standort", [info.light, info.indoor_ok ? "auch als Zimmerpflanze" : null].filter(Boolean).join(", "));
+  add("Gießen", info.water_text || (p.water_interval ? `Etwa alle ${p.water_interval} Tage gießen.` : info.water ? `Wasserbedarf ${info.water}.` : null));
+  add("Düngen", info.fertilize);
+  add("Blüte", info.flowering);
+  add("Überwintern", winterText(p));
+  add("Erde", info.soil);
+  add("Rückschnitt", info.pruning);
+  add("Vermehrung", info.propagation);
+  add("Wuchshöhe", info.height);
+  add("Lockt an", info.attracts);
+  add("Essbar", info.edible || (info.toxic_humans ? "nein (giftig)" : null));
+  add("Topf", info.pot_size);
+  return rows.join("");
+}
+
 function setTab(name) {
   document.querySelectorAll("#tabbar a").forEach((a) => a.classList.toggle("on", a.dataset.tab === name));
 }
@@ -405,7 +444,12 @@ function viewForm(existing) {
           <label class="f"><span>Gießen alle … Tage</span><input class="inp" type="number" min="1" max="120" name="water_interval" value="${esc(p.water_interval ?? "")}"></label>
           <label class="f"><span>Wasserbedarf</span><input class="inp" name="i_water" value="${esc(info.water)}" placeholder="wenig / mittel / viel"></label>
         </div>
-        <label class="f"><span>Licht</span><input class="inp" name="i_light" value="${esc(info.light)}" placeholder="Sonne, Halbschatten…"></label>
+        <label class="f"><span>Gieß-Hinweis</span><input class="inp" name="i_water_text" value="${esc(info.water_text)}" placeholder="z. B. Gut feucht halten"></label>
+        <label class="f"><span>Licht / Standort</span><input class="inp" name="i_light" value="${esc(info.light)}" placeholder="Sonne, Halbschatten…"></label>
+        <div class="row2">
+          <label class="f"><span>Düngen</span><input class="inp" name="i_fertilize" value="${esc(info.fertilize)}" placeholder="z. B. wöchentlich"></label>
+          <label class="f"><span>Herkunft</span><input class="inp" name="i_origin" value="${esc(info.origin)}"></label>
+        </div>
         <div class="row2">
           <label class="f"><span>Winterhart?</span><select class="inp" name="hardy">
             ${Object.entries(HARDY).map(([k, h]) => `<option value="${k}" ${p.hardy === k ? "selected" : ""}>${h.t}</option>`).join("")}
@@ -430,6 +474,19 @@ function viewForm(existing) {
           <div class="row2">
             <label class="f"><span>Familie</span><input class="inp" name="i_family" value="${esc(info.family)}"></label>
             <label class="f"><span>Winterhärtezone (USDA)</span><input class="inp" name="i_hardiness_zone" value="${esc(info.hardiness_zone)}"></label>
+          </div>
+          <label class="f"><span>Überwintern (leer = automatisch)</span><input class="inp" name="i_winter" value="${esc(info.winter)}" placeholder="${esc(winterText({ ...p, info: { ...info, winter: null } }) || "")}"></label>
+          <div class="row2">
+            <label class="f"><span>Essbar</span><input class="inp" name="i_edible" value="${esc(info.edible)}" placeholder="ja / nein"></label>
+            <label class="f"><span>Topfgröße</span><input class="inp" name="i_pot_size" value="${esc(info.pot_size)}" placeholder="z. B. 3 l"></label>
+          </div>
+          <div class="row2">
+            <label class="f"><span>Erde</span><input class="inp" name="i_soil" value="${esc(info.soil)}"></label>
+            <label class="f"><span>Rückschnitt</span><input class="inp" name="i_pruning" value="${esc(info.pruning)}"></label>
+          </div>
+          <div class="row2">
+            <label class="f"><span>Wuchshöhe</span><input class="inp" name="i_height" value="${esc(info.height)}"></label>
+            <label class="f"><span>Vermehrung</span><input class="inp" name="i_propagation" value="${esc(info.propagation)}"></label>
           </div>
           <label class="f"><span>Musterbild (URL)</span><input class="inp" name="ref_image_url" value="${esc(ref || "")}"></label>
           <label class="f"><span>Beschreibung</span><textarea class="inp" name="i_description" style="min-height:160px">${esc(info.description)}</textarea></label>
@@ -539,7 +596,7 @@ async function viewDetail(id) {
 
   const desc = (info.description || "").split(/\n+/).filter(Boolean).map((x) => `<p>${esc(x)}</p>`).join("");
   const frostNote = needsFrostCare(p)
-    ? `<div class="notice"><span class="ni">❄️</span><div><b>${p.hardy === "nein" ? "Vor dem ersten Frost reinholen" : "Im Winter schützen"}</b>${p.hardy === "nein" ? "Diese Pflanze ist bei dir nicht winterhart. Hell und frostfrei überwintern." : "Bei starkem Frost mit Vlies schützen, Topf isolieren oder geschützt stellen."}</div></div>`
+    ? `<div class="notice"><span class="ni">❄️</span><div><b>${p.hardy === "nein" ? "Vor dem ersten Frost reinholen" : "Im Winter schützen"}</b>${esc(winterText(p) || "")}</div></div>`
     : "";
 
   $app.innerHTML = `
@@ -562,6 +619,9 @@ async function viewDetail(id) {
       ${p.last_watered ? `<p class="sources" style="text-align:center">Zuletzt gegossen ${relDays(p.last_watered)}${p.next_water_in !== null ? (p.next_water_in > 0 ? ` · nächstes Mal in ${p.next_water_in} Tagen` : " · ist wieder dran") : ""}</p>` : ""}
       ${frostNote}
 
+      ${careRows(p) ? `<section class="panel care"><h2>${LEAFMARK}Pflege</h2><div class="tagcard"><div class="tagname">${esc(p.species_common || p.name)}</div>${careRows(p)}${p.species_sci ? `<div class="tagsci">${esc(p.species_sci)}</div>` : ""}</div>
+        ${info.care_guide ? `<details class="more"><summary>Ausführliche Pflegeanleitung (englisch, Perenual)</summary>${Object.entries(info.care_guide).map(([k, v]) => `<p class="desc"><b>${esc({ watering: "Gießen", sunlight: "Licht", pruning: "Rückschnitt" }[k] || k)}:</b> ${esc(v)}</p>`).join("")}</details>` : ""}
+      </section>` : ""}
       <section class="panel"><h2>${LEAFMARK}Steckbrief</h2>
         ${facts.length ? `<div class="facts">${facts.join("")}</div>` : `<p class="sources">Noch keine Daten. Über „Daten neu abrufen“ oder „Bearbeiten“ ergänzen.</p>`}
         ${info.sources && info.sources.length ? `<p class="sources">Quellen: ${esc(info.sources.join(", "))}</p>` : ""}
