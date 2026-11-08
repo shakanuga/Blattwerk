@@ -639,6 +639,7 @@ async function viewDetail(id) {
       const params = new URLSearchParams();
       if (p.species_common) params.set("title", p.species_common);
       if (p.species_sci) params.set("sci", p.species_sci);
+      params.set("refresh", "1");
       const prof = await api("lookup?" + params);
       (prof.warnings || []).forEach((w) => toast(w, true));
       toast("Neue Daten geladen – bitte prüfen & speichern");
@@ -678,7 +679,7 @@ function viewSettings() {
   const apis = [
     ["Wikipedia & Wikidata", true, "Beschreibung, Musterbild, botanischer Name. Kein Key nötig.", null, []],
     ["Pl@ntNet", c.plantnet, "Erkennt die Art direkt am Foto (500 Erkennungen/Tag gratis).", "https://my.plantnet.org/", [["PLANTNET_API_KEY", "API-Key"]]],
-    ["Perenual", c.perenual, "Licht, Wasser, Gießintervall, Winterhärtezone, Giftigkeit (100 Abfragen/Tag gratis, Ergebnisse werden 30 Tage gecacht).", "https://perenual.com/docs/api", [["PERENUAL_API_KEY", "API-Key"]]],
+    ["Perenual", c.perenual, "Licht, Wasser, Gießintervall, Winterhärtezone, Giftigkeit (100 Abfragen/Tag gratis; Antworten werden lokal gespeichert, jede Art kostet nur einmal).", "https://perenual.com/docs/api", [["PERENUAL_API_KEY", "API-Key"]]],
     ["Open Plantbook", c.openplantbook, "Temperatur-, Licht-, Luft- und Bodenfeuchte-Bereiche.", "https://open.plantbook.io/", [["OPENPLANTBOOK_CLIENT_ID", "Client-ID"], ["OPENPLANTBOOK_CLIENT_SECRET", "Client-Secret"]]],
   ];
   $app.innerHTML = `
@@ -702,7 +703,7 @@ function viewSettings() {
               ? `<p>✓ ${label} kommt aus dem Container (<code>${envName}</code>)</p>`
               : `<label class="f" style="margin:8px 0 0"><span>${label}</span><input class="inp keyin" type="password" autocomplete="off" data-k="${envName}" placeholder="${src ? "•••••• gespeichert – zum Ändern neu eingeben" : "einfügen…"}"></label>`;
           }).join("")}</div></div>`).join("")}
-        <button class="btn" id="saveK" style="margin-top:14px">🔑 Keys speichern</button>
+        ${apis.some((a) => a[4].some(([k]) => (c.keys || {})[k] !== "env")) ? `<button class="btn" id="saveK" style="margin-top:14px">🔑 Keys speichern</button>` : ""}
         <p class="sources">Die Keys werden nur auf deinem Server gespeichert (in <code>/data</code>) und nie an den Browser zurückgeschickt. Ein Key im Container hat Vorrang.</p>
       </section>
       <section class="panel"><h2>${LEAFMARK}Aufs Handy</h2>
@@ -710,7 +711,7 @@ function viewSettings() {
       </section>
       ${DIVIDER}<div class="footer">Blattwerk ${esc(c.version)}</div>
     </main>`;
-  document.getElementById("saveK").addEventListener("click", async () => {
+  document.getElementById("saveK")?.addEventListener("click", async () => {
     const keys = {};
     document.querySelectorAll(".keyin").forEach((i) => { if (i.value.trim()) keys[i.dataset.k] = i.value.trim(); });
     if (!Object.keys(keys).length) { toast("Kein neuer Key eingetragen", true); return; }

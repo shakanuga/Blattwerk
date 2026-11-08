@@ -25,7 +25,7 @@ Alle API-Keys sind optional und kostenlos. Du kannst sie entweder als Container-
 | [Perenual](https://perenual.com/docs/api) | Licht, Wasser, Gießintervall, Winterhärtezone, Giftigkeit (100 Abfragen/Tag) | `PERENUAL_API_KEY` |
 | [Open Plantbook](https://open.plantbook.io/) | Temperatur, Lux, Luft- und Bodenfeuchte | `OPENPLANTBOOK_CLIENT_ID` + `OPENPLANTBOOK_CLIENT_SECRET` |
 
-Antworten werden 7 bis 30 Tage zwischengespeichert, damit die Tageslimits reichen.
+API-Antworten werden dauerhaft lokal gespeichert, jede Art kostet also nur eine Abfrage. „Daten neu abrufen“ holt bewusst frische Daten; ist die Quelle dann nicht erreichbar, bleibt die gespeicherte Antwort.
 
 ## Installation auf Unraid
 

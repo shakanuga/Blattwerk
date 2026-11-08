@@ -189,13 +189,26 @@ def http_json(url, data=None, headers=None, method=None, timeout=20):
         raise UpstreamError(f"{urllib.parse.urlsplit(url).netloc} nicht erreichbar: {e.reason}")
 
 
+_tl = threading.local()
+
+
 def cached(key, ttl, fn):
-    """Einfacher SQLite-Cache, schont die Tageslimits der APIs."""
+    """SQLite-Cache für API-Antworten, schont die Tageslimits.
+
+    ttl=None: dauerhaft gespeichert. „Daten neu abrufen“ setzt _tl.force und
+    lädt frisch; schlägt das fehl, wird die gespeicherte Antwort genutzt.
+    """
+    force = getattr(_tl, "force", False)
     with db() as c:
         row = c.execute("SELECT value, at FROM cache WHERE key=?", (key,)).fetchone()
-        if row and time.time() - row["at"] < ttl:
+    if row and not force and (ttl is None or time.time() - row["at"] < ttl):
+        return json.loads(row["value"])
+    try:
+        val = fn()
+    except UpstreamError:
+        if row:
             return json.loads(row["value"])
-    val = fn()
+        raise
     with db() as c:
         c.execute(
             "INSERT OR REPLACE INTO cache(key, value, at) VALUES (?,?,?)",
@@ -294,7 +307,7 @@ def wiki_page(title):
             "wikidata": (p.get("pageprops") or {}).get("wikibase_item"),
         }
 
-    return cached(f"wpage:{WIKI_LANG}:{title}", 14 * DAY, go)
+    return cached(f"wpage:{WIKI_LANG}:{title}", None, go)
 
 
 def wikidata_taxon(qid):
@@ -320,7 +333,7 @@ def wikidata_taxon(qid):
         }
 
     try:
-        return cached(f"wd:{qid}", 30 * DAY, go)
+        return cached(f"wd:{qid}", None, go)
     except UpstreamError:
         return {}
 
@@ -361,7 +374,7 @@ def perenual_find(sci_name):
         det = http_json(f"{PERENUAL_BASE}/species/details/{best['id']}?key={key('PERENUAL_API_KEY')}")
         return det
 
-    return cached(f"perenual:{sci_name.lower()}", 30 * DAY, go)
+    return cached(f"perenual:{sci_name.lower()}", None, go)
 
 
 SUN_MAP = {
@@ -530,7 +543,7 @@ def opb_find(sci_name):
                 break
         return http_json(f"{OPB_BASE}/plant/detail/{urllib.parse.quote(pid)}/", headers=h)
 
-    return cached(f"opb:{sci_name.lower()}", 30 * DAY, go)
+    return cached(f"opb:{sci_name.lower()}", None, go)
 
 
 def map_opb(d):
@@ -1104,7 +1117,11 @@ class Handler(BaseHTTPRequestHandler):
         if head == "lookup" and method == "GET":
             if not (qs.get("title") or qs.get("sci")):
                 return self.err(400, "title oder sci fehlt")
-            return self.send_json(lookup(qs.get("title"), qs.get("sci")))
+            _tl.force = qs.get("refresh") == "1"
+            try:
+                return self.send_json(lookup(qs.get("title"), qs.get("sci")))
+            finally:
+                _tl.force = False
 
         if head == "identify" and method == "POST":
             body = self.body_json()
