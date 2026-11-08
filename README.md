@@ -31,8 +31,10 @@ Antworten werden 7 bis 30 Tage zwischengespeichert, damit die Tageslimits reiche
 
 **Variante A, fertiges Image (nach dem ersten Push auf GitHub):**
 1. Die GitHub Action baut das Image automatisch nach `ghcr.io/shakanuga/blattwerk:latest`. Das Paket unter GitHub → Packages auf *public* stellen.
-2. `unraid/blattwerk.xml` nach `/boot/config/plugins/dockerMan/templates-user/` kopieren.
-3. In Unraid: Docker → Add Container → Template „Blattwerk“ wählen, Keys eintragen, starten.
+2. `unraid/blattwerk.xml` als **`my-blattwerk.xml`** nach `/boot/config/plugins/dockerMan/templates-user/` kopieren.
+3. In Unraid: Docker → Add Container → Template „blattwerk“ wählen, Keys eintragen, starten.
+
+> **Wichtig:** In `templates-user` darf nur **eine** Datei mit `<Name>blattwerk</Name>` liegen. Unraid nimmt beim Bearbeiten die erste passende Datei. Liegt dort zusätzlich eine unausgefüllte Vorlage, sind die Felder beim nächsten Öffnen leer, obwohl der Container mit den richtigen Werten läuft.
 
 **Variante B, lokal bauen:**
 ```bash

@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <Container version="2">
-  <Name>Blattwerk</Name>
+  <Name>blattwerk</Name>
   <Repository>ghcr.io/shakanuga/blattwerk:latest</Repository>
   <Registry>https://github.com/shakanuga/Blattwerk/pkgs/container/blattwerk</Registry>
   <Network>bridge</Network>
