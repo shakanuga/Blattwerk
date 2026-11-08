@@ -26,6 +26,8 @@ from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pocketid
+
 VERSION = "1.0.0"
 PORT = int(os.environ.get("PORT", "8080"))
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
@@ -41,6 +43,20 @@ MAX_BODY = 25 * 1024 * 1024
 PHOTO_DIR = DATA_DIR / "photos"
 REF_DIR = DATA_DIR / "ref"
 DB_PATH = DATA_DIR / "blattwerk.db"
+
+OIDC = pocketid.PocketID()
+SESSION_COOKIE = "blattwerk_session"
+SESSION_MAX_AGE = 180 * 86400
+OPEN_PATHS = ("/manifest.webmanifest", "/icon-180.png", "/icon-192.png", "/icon-512.png", "/icon.svg")
+_oidc_key = None
+
+
+def oidc_key():
+    global _oidc_key
+    if _oidc_key is None:
+        _oidc_key = pocketid.secret_key(DATA_DIR)
+    return _oidc_key
+
 
 DEFAULT_SETTINGS = {"local_min_temp": -15, "region_label": "Mein Garten"}
 
@@ -908,11 +924,95 @@ class Handler(BaseHTTPRequestHandler):
     def do_DELETE(self):
         self.route("DELETE")
 
+    # -- Anmeldung über Pocket ID (nur wenn OIDC_* gesetzt ist)
+    def base_url(self):
+        proto = (self.headers.get("X-Forwarded-Proto") or "http").split(",")[0].strip()
+        host = (self.headers.get("X-Forwarded-Host") or self.headers.get("Host") or f"localhost:{PORT}").split(",")[0]
+        return f"{proto}://{host.strip()}"
+
+    def cookie(self, name):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == name:
+                return v
+        return None
+
+    def set_cookie(self, name, value, max_age):
+        secure = "; Secure" if self.base_url().startswith("https://") else ""
+        self.send_header("Set-Cookie", f"{name}={value}; Max-Age={max_age}; Path=/; HttpOnly; SameSite=Lax{secure}")
+
+    def redirect(self, location, cookies=()):
+        self.send_response(302)
+        self.send_header("Location", location)
+        for c in cookies:
+            self.set_cookie(*c)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def signed_in(self):
+        return bool(pocketid.unsign(self.cookie(SESSION_COOKIE), oidc_key(), max_age=SESSION_MAX_AGE))
+
+    def auth_page(self, msg, status=403, cookies=()):
+        html = (f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
+                f"<title>Blattwerk</title><body style='font-family:system-ui;max-width:420px;margin:12vh auto;"
+                f"padding:0 16px'><h1>🌿 Blattwerk</h1><p>{msg}</p><p><a href='/auth/pocketid'>"
+                f"{OIDC.label}</a></p></body>").encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        for c in cookies:
+            self.set_cookie(*c)
+        self.send_header("Content-Length", str(len(html)))
+        self.end_headers()
+        self.wfile.write(html)
+
+    def auth(self, method, path, qs):
+        """Gibt True zurück, wenn die Anfrage erledigt ist (Weiterleitung, Fehler, Anmeldeschritt)."""
+        if path == "/auth/pocketid":
+            try:
+                url, pending = OIDC.begin(self.base_url() + "/auth/pocketid/zurueck", qs.get("next", "/"))
+            except pocketid.OIDCError as e:
+                self.auth_page(str(e).replace("<", "&lt;"))
+                return True
+            self.redirect(url, [(pocketid.PENDING_COOKIE, pocketid.sign(pending, oidc_key()),
+                                 pocketid.PENDING_MAX_AGE)])
+            return True
+        if path == "/auth/pocketid/zurueck":
+            pending = pocketid.unsign(self.cookie(pocketid.PENDING_COOKIE), oidc_key())
+            try:
+                info = OIDC.complete(qs, pending)
+            except pocketid.OIDCError as e:
+                self.auth_page(str(e).replace("<", "&lt;"))
+                return True
+            session = pocketid.sign({"sub": info["sub"], "name": info["name"] or info["username"],
+                                     "t": int(time.time())}, oidc_key())
+            self.redirect(pending["next"], [(SESSION_COOKIE, session, SESSION_MAX_AGE),
+                                            (pocketid.PENDING_COOKIE, "", 0)])
+            return True
+        if path == "/auth/abmelden":
+            self.auth_page("Du bist abgemeldet.", 200, [(SESSION_COOKIE, "", 0)])
+            return True
+        if not OIDC.enabled or path in OPEN_PATHS:
+            return False
+        if method != "GET":
+            origin = self.headers.get("Origin")
+            if origin and urllib.parse.urlsplit(origin).netloc != urllib.parse.urlsplit(self.base_url()).netloc:
+                self.err(403, "Anfrage von fremder Seite")
+                return True
+        if self.signed_in():
+            return False
+        if path.startswith("/api/"):
+            self.send_json({"error": "Bitte anmelden", "login": "/auth/pocketid"}, 401)
+        else:
+            self.redirect("/auth/pocketid?next=" + urllib.parse.quote(self.path, safe="/"))
+        return True
+
     def route(self, method):
         u = urllib.parse.urlsplit(self.path)
         path = urllib.parse.unquote(u.path)
         qs = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
         try:
+            if self.auth(method, path, qs):
+                return
             if path.startswith("/api/"):
                 return self.api(method, path[5:].strip("/").split("/"), qs)
             if method != "GET":

@@ -50,6 +50,10 @@ async function api(path, opts = {}) {
     o.headers["Content-Type"] = "application/json";
   }
   const r = await fetch("/api/" + path, o);
+  if (r.status === 401) {
+    location.href = "/auth/pocketid?next=" + encodeURIComponent(location.pathname + location.search + location.hash);
+    throw new Error("Bitte anmelden");
+  }
   let data = null;
   try { data = await r.json(); } catch { /* leer */ }
   if (!r.ok) throw new Error((data && data.error) || `Fehler ${r.status}`);

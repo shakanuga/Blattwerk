@@ -44,6 +44,16 @@ Danach ist die App unter `http://<server>:8766` erreichbar. Mit einem Reverse Pr
 
 > Blattwerk hat keine eigene Anmeldung. Gedacht ist es fürs Heimnetz bzw. Tailscale. Für den Zugriff von außen eine Access List im NPM davorsetzen.
 
+## Anmeldung mit Pocket ID
+
+Ohne Einstellungen ist Blattwerk offen für alle, die die Adresse erreichen. Mit Pocket ID fragt Blattwerk vor jedem Zugriff nach einer Anmeldung.
+
+1. In Pocket ID einen OIDC-Client `Blattwerk` anlegen, Callback-URL `https://pflanzen.example.de/auth/pocketid/zurueck`. Unter „Allowed User Groups“ festlegen, wer rein darf.
+2. Am Container `OIDC_ISSUER` (z. B. `https://id.example.de`), `OIDC_CLIENT_ID` und `OIDC_CLIENT_SECRET` setzen.
+3. Optional: `OIDC_ALLOWED_GROUPS` (zusätzliche Gruppenprüfung in Blattwerk), `OIDC_LABEL` (Text auf dem Knopf), `OIDC_REDIRECT_URI` (falls die Rücksprung-Adresse falsch gebildet wird).
+
+Die Anmeldung gilt 180 Tage. Abmelden über `/auth/abmelden`. Manifest und Icons bleiben ohne Anmeldung erreichbar, damit die App auf dem Homescreen ihr Symbol behält.
+
 ## Entwicklung
 
 ```bash
