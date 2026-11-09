@@ -125,7 +125,8 @@ function winterText(p) {
     case "bedingt":
       return `Verträgt leichten Frost${t ? " bis etwa " + t + " °C" : ""}. Bei strengem Frost mit Vlies schützen oder geschützt an die Hauswand stellen.`;
     case "nein":
-      if (p.location === "drinnen") return `Nicht frosthart – ganzjährig drinnen halten${info.tropical ? ", nicht unter 15 °C" : ""}.`;
+      if (info.indoor_ok && p.min_temp !== null && p.min_temp !== undefined && p.min_temp >= 12) return `Zimmerpflanze – ganzjährig warm halten, nicht unter ${t} °C.`;
+      if (p.location === "drinnen") return `Nicht frosthart${t ? " (verträgt bis etwa " + t + " °C)" : ""}. Im Winter hell und frostfrei stehen lassen, weniger gießen, nicht düngen.`;
       return info.tropical
         ? "Nicht frosthart. Ab etwa 10 °C nachts reinholen und warm (über 15 °C) und hell überwintern."
         : "Nicht frosthart. Vor dem ersten Frost reinholen, hell und kühl (ca. 5–12 °C) überwintern, wenig gießen, nicht düngen.";

@@ -26,6 +26,8 @@ from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import care_de
+
 import pocketid
 
 VERSION = "1.0.0"
@@ -623,6 +625,19 @@ def _height(dims):
     return None
 
 
+def lux_sentence(lo, hi):
+    hi = hi or lo
+    if lo >= 15000:
+        return "Vollsonnig"
+    if hi >= 40000 and lo >= 2500:
+        return "Sonnig bis halbschattig"
+    if hi >= 20000:
+        return "Hell bis halbschattig"
+    if hi >= 8000:
+        return "Hell, keine direkte Sonne"
+    return "Halbschattig bis schattig"
+
+
 def water_sentence(info, interval=None):
     """Gießhinweis als Satz, wie auf einem Pflanzenetikett."""
     w = (info.get("water") or "").lower()
@@ -637,6 +652,9 @@ def water_sentence(info, interval=None):
         txt = "Sparsam gießen, Erde zwischendurch gut abtrocknen lassen."
     elif w == "sehr wenig":
         txt = "Nur selten gießen – verträgt längere Trockenheit."
+    elif isinstance(soil_min, (int, float)) and not w:
+        txt = ("Mäßig gießen, Erde zwischendurch antrocknen lassen." if soil_min >= 15
+               else "Sparsam gießen, Erde zwischendurch gut abtrocknen lassen.")
     elif rng:
         txt = f"Etwa alle {rng} Tage gießen."
     else:
@@ -715,6 +733,12 @@ def map_opb(d):
             out["opb_min_temp"] = float(d["min_temp"])
         except Exception:
             pass
+    for k_src, k_dst in (("min_light_lux", "opb_lux_min"), ("max_light_lux", "opb_lux_max")):
+        if d.get(k_src) is not None:
+            try:
+                out[k_dst] = float(d[k_src])
+            except Exception:
+                pass
     if d.get("min_soil_moist") is not None:
         try:
             out["opb_soil_min"] = float(d["min_soil_moist"])
@@ -855,16 +879,27 @@ def lookup(title=None, sci=None):
         try:
             o = map_opb(opb_find(sci_name))
             if o:
+                # min_temp von Open Plantbook ist eine Wohlfühl-Untergrenze, keine Frostgrenze
                 info.update({k: v for k, v in o.items() if k != "opb_min_temp"})
-                if profile.get("min_temp") is None and o.get("opb_min_temp") is not None:
-                    profile["min_temp"] = o["opb_min_temp"]
                 info["sources"].append("Open Plantbook")
         except UpstreamError as e:
             warnings.append(f"Open Plantbook: {e}")
 
-    ws = water_sentence(info, profile.get("water_interval"))
-    if ws:
-        info["water_text"] = ws
+    # Blattwerk-Grunddaten (deutsch, kuratiert) haben Vorrang
+    base = care_de.find(sci_name)
+    if base:
+        info.update(care_de.to_info(base))
+        if base.get("min_temp") is not None:
+            profile["min_temp"] = base["min_temp"]
+        if base.get("interval"):
+            profile["water_interval"] = base["interval"]
+        info["sources"].append("Blattwerk-Grunddaten")
+    if not info.get("water_text"):
+        ws = water_sentence(info, profile.get("water_interval"))
+        if ws:
+            info["water_text"] = ws
+    if not info.get("light") and info.get("opb_lux_min") is not None:
+        info["light"] = lux_sentence(info["opb_lux_min"], info.get("opb_lux_max"))
 
     if not profile.get("ref_image_url"):
         alt = info.get("perenual_image") or info.get("opb_image")
