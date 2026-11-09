@@ -85,7 +85,29 @@ function relDays(iso) {
   return `vor ${d} Tagen`;
 }
 function needsFrostCare(p) {
-  return p.location !== "drinnen" && (p.hardy === "nein" || p.hardy === "bedingt");
+  return (p.cur_location || p.location) !== "drinnen" && (p.hardy === "nein" || p.hardy === "bedingt");
+}
+function isOutSeason() {
+  const d = new Date(), m = d.getMonth() + 1;
+  return (m === 5 && d.getDate() >= 15) || (m >= 6 && m <= 9);
+}
+const LOCNAME = { drinnen: "Drinnen", balkon: "Balkon", draussen: "Draußen" };
+function roomOf(p) {
+  const spot = (p.cur_spot ?? p.spot ?? "").trim();
+  if (spot) return spot;
+  const l = p.cur_location || p.location;
+  return l === "drinnen" ? "Drinnen (ohne Raum)" : LOCNAME[l] || "Ohne Raum";
+}
+function whereText(p) {
+  const l = p.cur_location || p.location, sp = p.cur_spot ?? p.spot;
+  return `${LOC[l] || ""}${sp ? " · " + esc(sp) : ""}`;
+}
+function allRooms() {
+  return [...new Set((state.plants || []).flatMap((p) => [p.spot, p.winter_spot]).filter(Boolean).map((x) => x.trim()))].sort((a, b) => a.localeCompare(b, "de"));
+}
+async function setWintering(ids, flag) {
+  await api("wintering", { method: "POST", body: { ids, wintering: flag } });
+  toast(flag ? `❄️ ${ids.length === 1 ? "Ist" : ids.length + " Pflanzen sind"} im Winterquartier` : `☀️ ${ids.length === 1 ? "Ist" : ids.length + " Pflanzen sind"} wieder draußen`);
 }
 function isWinterish() {
   const m = new Date().getMonth() + 1;
@@ -167,6 +189,7 @@ async function router() {
     if (!state.config) state.config = await api("config");
     let m;
     if (h === "/" || h === "") { setTab("home"); return await viewList(); }
+    if ((m = h.match(/^\/raum\/(.+)$/))) { setTab("home"); return await viewList(decodeURIComponent(m[1])); }
     if (h === "/neu") { setTab("new"); return viewNew(); }
     if (h === "/neu/details") { setTab("new"); return viewForm(); }
     if (h === "/einstellungen") { setTab("settings"); return viewSettings(); }
@@ -180,42 +203,62 @@ async function router() {
 window.addEventListener("hashchange", router);
 
 // ------------------------------------------------------------------ Übersicht
-async function viewList() {
+async function viewList(room) {
   $app.innerHTML = `<header class="hero">${vine("tl")}${vine("tr")}<h1>Blatt<em>werk</em></h1><p class="sub">Dein Pflanzen-Tagebuch</p></header><div class="growing">${GROWING}</div>`;
-  const { plants } = await api("plants");
-  state.plants = plants;
+  const { plants: all } = await api("plants");
+  state.plants = all;
+  const plants = room ? all.filter((p) => roomOf(p) === room) : all;
   const thirsty = plants.filter((p) => p.next_water_in !== null && p.next_water_in <= 0);
-  const frost = plants.filter(needsFrostCare);
+  const frost = all.filter((p) => needsFrostCare(p) && !p.wintering);
+  const backOut = all.filter((p) => p.wintering && p.has_winter_place);
 
   let notices = "";
-  if (frost.length && isWinterish()) {
-    notices += `<div class="notice"><span class="ni">❄️</span><div><b>Frostschutz prüfen</b>${frost.map((p) => `<a href="#/pflanze/${p.id}">${esc(p.name)}</a>`).join(", ")} ${frost.length === 1 ? "steht" : "stehen"} draußen und ${frost.length === 1 ? "ist" : "sind"} nicht (voll) winterhart.</div></div>`;
+  if (!room && frost.length && isWinterish()) {
+    const movable = frost.filter((p) => p.has_winter_place);
+    const noPlace = frost.filter((p) => !p.has_winter_place);
+    notices += `<div class="notice"><span class="ni">❄️</span><div><b>Frostschutz</b>
+      ${movable.length ? `${movable.map((p) => `<a href="#/pflanze/${p.id}">${esc(p.name)}</a>`).join(", ")} ${movable.length === 1 ? "sollte" : "sollten"} ins Winterquartier.
+        <div style="margin-top:8px"><button class="btn" id="allIn" style="padding:8px 14px">❄️ ${movable.length === 1 ? "Ins Winterquartier" : `Alle ${movable.length} ins Winterquartier`}</button></div>` : ""}
+      ${noPlace.length ? `<div style="margin-top:${movable.length ? 8 : 0}px">${noPlace.map((p) => `<a href="#/pflanze/${p.id}/bearbeiten">${esc(p.name)}</a>`).join(", ")} ${noPlace.length === 1 ? "steht" : "stehen"} draußen und ${noPlace.length === 1 ? "hat" : "haben"} noch kein Winterquartier – antippen zum Eintragen.</div>` : ""}
+    </div></div>`;
+  }
+  if (!room && backOut.length && isOutSeason()) {
+    notices += `<div class="notice warn"><span class="ni">☀️</span><div><b>Eisheilige vorbei</b>${backOut.map((p) => `<a href="#/pflanze/${p.id}">${esc(p.name)}</a>`).join(", ")} ${backOut.length === 1 ? "kann" : "können"} wieder raus.
+      <div style="margin-top:8px"><button class="btn" id="allOut" style="padding:8px 14px">☀️ ${backOut.length === 1 ? "Wieder raus" : `Alle ${backOut.length} wieder raus`}</button></div></div></div>`;
   }
   if (thirsty.length) {
     notices += `<div class="notice warn"><span class="ni">💧</span><div><b>Durstig</b>${thirsty.map((p) => `<a href="#/pflanze/${p.id}">${esc(p.name)}</a>`).join(", ")}</div></div>`;
   }
 
+  // Räume zusammenstellen
+  const rooms = {};
+  for (const p of all) (rooms[roomOf(p)] ||= []).push(p);
+  const roomNames = Object.keys(rooms).sort((x, y) => rooms[y].length - rooms[x].length || x.localeCompare(y, "de"));
+  const showRooms = !room && state.view !== "alle" && all.length > 0;
+
   $app.innerHTML = `
     <header class="hero">${vine("tl")}${vine("tr")}
-      <h1>Blatt<em>werk</em></h1>
-      <p class="sub">Dein Pflanzen-Tagebuch</p>
+      ${room ? `<a class="back" href="#/">← Alle Räume</a><h1>${esc(room)}</h1><p class="sub">${plants.length} ${plants.length === 1 ? "Pflanze" : "Pflanzen"}</p>`
+             : `<h1>Blatt<em>werk</em></h1><p class="sub">Dein Pflanzen-Tagebuch</p>`}
     </header>
     <main class="wrap">
       <div class="stats">
         <div class="stat"><b>${plants.length}</b><span>Pflanzen</span></div>
         <div class="stat"><b>${thirsty.length}</b><span>durstig</span></div>
-        <div class="stat"><b>${plants.filter((p) => p.hardy === "ja").length}</b><span>winterhart</span></div>
+        <div class="stat"><b>${room ? plants.filter((p) => p.wintering).length : roomNames.length}</b><span>${room ? "überwintern hier" : "Räume"}</span></div>
       </div>
       ${notices}
-      ${plants.length ? `
+      ${all.length ? `
+      ${!room ? `<div class="seg viewseg" id="viewseg" style="margin-top:16px"><button data-v="raeume" class="${showRooms ? "on" : ""}">🚪 Räume</button><button data-v="alle" class="${showRooms ? "" : "on"}">🌿 Alle Pflanzen</button></div>` : ""}
+      ${showRooms ? `<div class="rooms">${roomNames.map((r) => roomTile(r, rooms[r])).join("")}</div>` : `
       <div class="toolbar">
         <label class="searchbox">🔎<input id="q" type="search" placeholder="Pflanzen durchsuchen…" value="${esc(state.q)}"></label>
         <div class="chips" id="chips">
-          ${[["alle", "Alle"], ["drinnen", "🏠 Drinnen"], ["balkon", "🪴 Balkon"], ["draussen", "🌳 Draußen"], ["durstig", "💧 Durstig"], ["frost", "🥶 Nicht winterhart"], ["giftig", "⚠️ Giftig für Tiere"]]
+          ${[["alle", "Alle"], ["drinnen", "🏠 Drinnen"], ["balkon", "🪴 Balkon"], ["draussen", "🌳 Draußen"], ["winter", "❄️ Im Winterquartier"], ["durstig", "💧 Durstig"], ["frost", "🥶 Nicht winterhart"], ["giftig", "⚠️ Giftig für Tiere"]]
             .map(([k, t]) => `<button class="chip ${state.filter === k ? "on" : ""}" data-f="${k}">${t}</button>`).join("")}
         </div>
       </div>
-      <div class="grid" id="grid"></div>` : `
+      <div class="grid" id="grid"></div>`}` : `
       <div class="empty">
         <div class="big">🌱</div>
         <h2>Noch keine Pflanzen</h2>
@@ -226,13 +269,21 @@ async function viewList() {
       <div class="footer">Blattwerk ${esc(state.config.version)}</div>
     </main>`;
 
-  if (!plants.length) return;
+  const allIn = document.getElementById("allIn");
+  if (allIn) allIn.onclick = async () => { await setWintering(frost.filter((p) => p.has_winter_place).map((p) => p.id), true); viewList(room); };
+  const allOut = document.getElementById("allOut");
+  if (allOut) allOut.onclick = async () => { await setWintering(backOut.map((p) => p.id), false); viewList(room); };
+  const vs = document.getElementById("viewseg");
+  if (vs) vs.addEventListener("click", (e) => { const b = e.target.closest("button"); if (!b) return; state.view = b.dataset.v; viewList(); });
+  if (!all.length || showRooms) return;
+
   const renderGrid = () => {
     const q = state.q.toLowerCase();
     const list = plants.filter((p) => {
-      if (q && ![p.name, p.species_common, p.species_sci, p.spot].some((v) => (v || "").toLowerCase().includes(q))) return false;
+      if (q && ![p.name, p.species_common, p.species_sci, p.spot, p.winter_spot].some((v) => (v || "").toLowerCase().includes(q))) return false;
       switch (state.filter) {
-        case "drinnen": case "balkon": case "draussen": return p.location === state.filter;
+        case "drinnen": case "balkon": case "draussen": return (p.cur_location || p.location) === state.filter;
+        case "winter": return p.wintering;
         case "durstig": return p.next_water_in !== null && p.next_water_in <= 0;
         case "frost": return p.hardy === "nein" || p.hardy === "bedingt";
         case "giftig": return p.info && p.info.toxic_pets === true;
@@ -252,6 +303,17 @@ async function viewList() {
   });
 }
 
+function roomTile(name, list) {
+  const imgs = list.map((p) => p.cover || p.ref_image).filter(Boolean).slice(0, 4);
+  const thirsty = list.filter((p) => p.next_water_in !== null && p.next_water_in <= 0).length;
+  const wint = list.filter((p) => p.wintering).length;
+  return `<a class="room" href="#/raum/${encodeURIComponent(name)}">
+    <div class="rimgs n${Math.max(1, imgs.length)}">${imgs.length ? imgs.map((u) => `<img loading="lazy" src="${esc(u)}" alt="">`).join("") : `<div class="noimg">🪴</div>`}</div>
+    ${cornerVine()}
+    <div class="rmeta"><h3>${esc(name)}</h3><span>${list.length} ${list.length === 1 ? "Pflanze" : "Pflanzen"}${thirsty ? ` · 💧 ${thirsty}` : ""}${wint ? ` · ❄️ ${wint} im Winterquartier` : ""}</span></div>
+  </a>`;
+}
+
 function waterPill(p) {
   if (p.next_water_in === null) return "";
   if (p.next_water_in <= 0) return `<span class="pill thirsty">💧 gießen!</span>`;
@@ -269,7 +331,7 @@ function card(p) {
     <div class="ph">${img ? `<img loading="lazy" src="${esc(img)}" alt="">` : `<div class="noimg">🪴</div>`}
       ${cornerVine()}
       <div class="badges">${waterPill(p)}${hardyPill(p)}</div>
-      <div class="where">${LOC[p.location] || ""}${p.spot ? " · " + esc(p.spot) : ""}</div>
+      <div class="where">${p.wintering ? "❄️ " : ""}${whereText(p)}</div>
     </div>
     <div class="meta"><h3>${esc(p.name)}</h3><div class="sp">${esc(p.species_sci || p.species_common || "Art unbekannt")}</div></div>
   </a>`;
@@ -434,13 +496,21 @@ function viewForm(existing) {
           <label class="f"><span>Art (deutsch)</span><input class="inp" name="species_common" value="${esc(p.species_common)}"></label>
           <label class="f"><span>Botanischer Name</span><input class="inp" name="species_sci" value="${esc(p.species_sci)}" style="font-style:italic"></label>
         </div>
-        <label class="f"><span>Standort</span>
+        <label class="f"><span>${"Standort (Sommer / normal)"}</span>
           <div class="seg" id="loc">${Object.entries(LOC).map(([k, t]) => `<button type="button" data-v="${k}" class="${p.location === k ? "on" : ""}">${t}</button>`).join("")}</div>
         </label>
         <div class="row2">
-          <label class="f"><span>Platz</span><input class="inp" name="spot" value="${esc(p.spot)}" placeholder="z. B. Wohnzimmer, Südfenster"></label>
+          <label class="f"><span>Raum / Platz</span><input class="inp" name="spot" list="roomlist" value="${esc(p.spot)}" placeholder="z. B. Wohnzimmer, Terrasse"></label>
           <label class="f"><span>Bei mir seit</span><input class="inp" type="date" name="acquired" value="${esc(p.acquired || (isEdit ? "" : new Date().toISOString().slice(0, 10)))}"></label>
         </div>
+        <details class="more winterbox" ${p.winter_location || p.winter_spot ? "open" : ""}>
+          <summary>❄️ Winterquartier ${p.winter_spot ? "· " + esc(p.winter_spot) : "(optional)"}</summary>
+          <p class="sources" style="margin-top:0">Wo steht die Pflanze im Winter? Dann zeigt Blattwerk sie im Winter in diesem Raum und erinnert dich im Herbst und nach den Eisheiligen.</p>
+          <div class="seg" id="wloc">${Object.entries(LOC).map(([k, t]) => `<button type="button" data-v="${k}" class="${(p.winter_location || "") === k ? "on" : ""}">${t}</button>`).join("")}</div>
+          <label class="f" style="margin-top:10px"><span>Raum im Winter</span><input class="inp" name="winter_spot" list="roomlist" value="${esc(p.winter_spot)}" placeholder="z. B. Wintergarten, Keller, Treppenhaus"></label>
+          <label class="f" style="display:flex;gap:10px;align-items:center"><input type="checkbox" name="wintering" ${p.wintering ? "checked" : ""} style="width:20px;height:20px"> <span style="margin:0">Steht gerade im Winterquartier</span></label>
+        </details>
+        <datalist id="roomlist">${allRooms().map((r) => `<option value="${esc(r)}">`).join("")}</datalist>
         <div class="row2">
           <label class="f"><span>Gießen alle … Tage</span><input class="inp" type="number" min="1" max="120" name="water_interval" value="${esc(p.water_interval ?? "")}"></label>
           <label class="f"><span>Wasserbedarf</span><input class="inp" name="i_water" value="${esc(info.water)}" placeholder="wenig / mittel / viel"></label>
@@ -496,6 +566,13 @@ function viewForm(existing) {
       </form>
     </main>`;
 
+  let wloc = p.winter_location || "";
+  document.getElementById("wloc").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    wloc = wloc === b.dataset.v ? "" : b.dataset.v;
+    document.querySelectorAll("#wloc button").forEach((x) => x.classList.toggle("on", x.dataset.v === wloc));
+  });
   let loc = p.location || "drinnen";
   document.getElementById("loc").addEventListener("click", (e) => {
     const b = e.target.closest("button");
@@ -528,6 +605,9 @@ function viewForm(existing) {
       species_sci: fd.get("species_sci").trim() || null,
       location: loc,
       spot: fd.get("spot").trim() || null,
+      winter_location: wloc || null,
+      winter_spot: fd.get("winter_spot").trim() || null,
+      wintering: fd.get("wintering") === "on" && !!(wloc || fd.get("winter_spot").trim()),
       acquired: fd.get("acquired") || null,
       water_interval: fd.get("water_interval"),
       hardy: fd.get("hardy"),
@@ -609,7 +689,7 @@ async function viewDetail(id) {
         <div class="title">
           <h1>${esc(p.name)}</h1>
           <div class="sci">${esc([p.species_common !== p.name ? p.species_common : null, p.species_sci].filter(Boolean).join(" · "))}</div>
-          <div class="pills"><span class="pill">${LOC[p.location] || ""}${p.spot ? " · " + esc(p.spot) : ""}</span>${waterPill(p)}</div>
+          <div class="pills"><span class="pill">${p.wintering ? "❄️ Winterquartier: " : ""}${whereText(p)}</span>${waterPill(p)}</div>
         </div>
       </div>
 
@@ -617,6 +697,9 @@ async function viewDetail(id) {
         <button class="btn water" id="water">💧 Gegossen</button>
         <label class="btn light" style="cursor:pointer">📷 Foto<input type="file" accept="image/*" capture="environment" id="addphoto" hidden></label>
       </div>
+      ${p.has_winter_place
+        ? `<button class="btn ${p.wintering ? "light" : "ghost"} block" id="wq" style="margin-top:10px">${p.wintering ? `☀️ Wieder raus nach ${whereText({ cur_location: p.location, cur_spot: p.spot })}` : `❄️ Ins Winterquartier: ${whereText({ cur_location: p.winter_location || p.location, cur_spot: p.winter_spot })}`}</button>`
+        : needsFrostCare(p) ? `<a class="btn ghost block" style="margin-top:10px" href="#/pflanze/${p.id}/bearbeiten">❄️ Winterquartier eintragen</a>` : ""}
       ${p.last_watered ? `<p class="sources" style="text-align:center">Zuletzt gegossen ${relDays(p.last_watered)}${p.next_water_in !== null ? (p.next_water_in > 0 ? ` · nächstes Mal in ${p.next_water_in} Tagen` : " · ist wieder dran") : ""}</p>` : ""}
       ${frostNote}
 
@@ -663,6 +746,8 @@ async function viewDetail(id) {
       ${DIVIDER}
     </main>`;
 
+  const wq = document.getElementById("wq");
+  if (wq) wq.addEventListener("click", async () => { await setWintering([p.id], !p.wintering); viewDetail(id); });
   document.getElementById("water").addEventListener("click", async () => {
     await api(`plants/${p.id}/water`, { method: "POST", body: {} });
     toast("💧 Danke fürs Gießen!");

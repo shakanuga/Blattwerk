@@ -148,6 +148,10 @@ def init_db():
             );
             """
         )
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(plants)")}
+        for col, typ in (("winter_location", "TEXT"), ("winter_spot", "TEXT"), ("wintering", "INTEGER DEFAULT 0")):
+            if col not in cols:
+                c.execute(f"ALTER TABLE plants ADD COLUMN {col} {typ}")
 
 
 def get_settings():
@@ -945,11 +949,22 @@ PLANT_FIELDS = (
     "min_temp",
     "water_interval",
     "cover_photo_id",
+    "winter_location",
+    "winter_spot",
+    "wintering",
 )
 
 
 def plant_row_to_dict(c, row, full=False):
     p = dict(row)
+    p["wintering"] = bool(p.get("wintering"))
+    has_winter = bool(p.get("winter_location") or p.get("winter_spot"))
+    p["has_winter_place"] = has_winter
+    if p["wintering"] and has_winter:
+        p["cur_location"] = p.get("winter_location") or p.get("location")
+        p["cur_spot"] = p.get("winter_spot")
+    else:
+        p["cur_location"], p["cur_spot"] = p.get("location"), p.get("spot")
     try:
         p["info"] = json.loads(p.get("info") or "{}")
     except Exception:
@@ -1016,6 +1031,8 @@ def upsert_plant(body, plant_id=None):
         vals["min_temp"] = _num(vals["min_temp"])
     if "water_interval" in vals:
         vals["water_interval"] = _num(vals["water_interval"], int)
+    if "wintering" in vals:
+        vals["wintering"] = 1 if vals["wintering"] else 0
     if "info" in body:
         vals["info"] = json.dumps(body["info"] or {}, ensure_ascii=False)
     vals["updated_at"] = now_iso()
@@ -1320,6 +1337,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(plantnet_identify(raw, body.get("organ") or "auto"))
             except UpstreamError as e:
                 return self.err(502, str(e))
+
+        if head == "wintering" and method == "POST":
+            # mehrere Pflanzen ins Winterquartier bringen bzw. wieder raus
+            body = self.body_json()
+            ids = [int(i) for i in body.get("ids") or []]
+            flag = 1 if body.get("wintering") else 0
+            with _db_lock, db() as c:
+                for i in ids:
+                    c.execute("UPDATE plants SET wintering=?, updated_at=? WHERE id=?", (flag, now_iso(), i))
+            return self.send_json({"updated": len(ids)})
 
         if head == "rehardy" and method == "POST":
             # Winterhärte aller Pflanzen nach neuer Ortstemperatur neu bewerten
