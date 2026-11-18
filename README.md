@@ -2,6 +2,9 @@
 
 Selbst gehosteter Pflanzen-Tracker. Du fotografierst eine Pflanze, lässt die Art erkennen oder suchst nach ihrem Namen, und Blattwerk holt Beschreibung, Musterbild, Licht- und Wasserbedarf, Winterhärte und Giftigkeit automatisch dazu.
 
+![Blattwerk auf dem Handy: Räume, Steckbrief, Balkon](docs/screenshots/handy.png)
+
+
 ## Funktionen
 
 - **Foto → Art**: Erkennung per Pl@ntNet (optional) oder Suche nach deutschem bzw. botanischem Namen
@@ -13,6 +16,12 @@ Selbst gehosteter Pflanzen-Tracker. Du fotografierst eine Pflanze, lässt die Ar
 - Filter nach Drinnen, Balkon, Draußen, durstig, nicht winterhart und giftig für Tiere
 - Läuft als Web-App auf dem Handy, die du auf den Home-Bildschirm legen kannst. „Foto“ öffnet dann direkt die Kamera.
 - Läuft nur mit der Python-Standardbibliothek; alle Daten liegen in `/data` (SQLite + Bilder)
+
+## Screenshots
+
+![Blattwerk am PC](docs/screenshots/desktop.png)
+
+<sub>Screenshots mit Demo-Pflanzen; die Pflanzenfotos sind gezeichnet.</sub>
 
 ## Datenquellen
 
